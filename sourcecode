@@ -1,0 +1,109 @@
+import os
+import re
+import sys
+from typing import List, Tuple
+from contextlib import contextmanager
+
+# Precompiled regex pattern with stricter email validation
+EMAIL_REGEX = re.compile(
+    r'(?:[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})',
+    re.ASCII | re.MULTILINE
+)
+
+@contextmanager
+def file_handler(path: str, mode: str, encoding: str = 'utf-8'):
+    """Context manager for safe file handling."""
+    file = None
+    try:
+        file = open(path, mode, encoding=encoding)
+        yield file
+    except IOError as e:
+        raise IOError(f"File operation failed for '{path}': {e}")
+    finally:
+        if file:
+            file.close()
+
+def validate_file_path(path: str) -> None:
+    """Validate file existence and readability."""
+    if not os.path.isfile(path):
+        raise FileNotFoundError(f"File '{path}' does not exist.")
+    if not os.access(path, os.R_OK):
+        raise PermissionError(f"File '{path}' is not readable.")
+    if os.path.getsize(path) == 0:
+        raise ValueError(f"File '{path}' is empty.")
+
+def extract_emails_from_text(text: str) -> List[str]:
+    """Extract and return sorted unique email addresses with memory efficiency."""
+    seen = set()
+    for match in EMAIL_REGEX.finditer(text):
+        email = match.group(0).lower()  # Normalize to lowercase
+        seen.add(email)
+    return sorted(seen)
+
+def process_file(input_path: str, output_path: str) -> None:
+    """Extract emails from input file and save to output file."""
+    try:
+        validate_file_path(input_path)
+        
+        # Read file in chunks to handle large files efficiently
+        chunk_size = 8192
+        content = []
+        with file_handler(input_path, 'r') as infile:
+            while True:
+                chunk = infile.read(chunk_size)
+                if not chunk:
+                    break
+                content.append(chunk)
+        
+        emails = extract_emails_from_text(''.join(content))
+        
+        if not emails:
+            print(" No email addresses found.")
+            return
+            
+        with file_handler(output_path, 'w') as outfile:
+            outfile.writelines(f"{email}\n" for email in emails)
+            
+        print(f"✅ {len(emails)} unique email(s) saved to '{output_path}'")
+        
+    except (FileNotFoundError, PermissionError, ValueError, IOError) as e:
+        print(f" Error: {e}")
+        raise
+    except Exception as e:
+        print(f" Unexpected Error: {e.__class__.__name__} - {e}")
+        raise
+
+def get_user_input() -> Tuple[str, str]:
+    """Get and validate input/output file paths from user."""
+    try:
+        input_path = input(" Enter input file path: ").strip()
+        output_path = input(" Enter output file path: ").strip()
+        
+        if not input_path or not output_path:
+            raise ValueError("File paths cannot be empty.")
+        
+        # Validate output directory exists
+        output_dir = os.path.dirname(output_path) or '.'
+        if not os.path.isdir(output_dir):
+            raise ValueError(f"Output directory '{output_dir}' does not exist.")
+            
+        return input_path, output_path
+    except ValueError as ve:
+        print(f" Input Error: {ve}")
+        sys.exit(1)
+
+def main():
+    """Main entry point with structured error handling."""
+    try:
+        input_file, output_file = get_user_input()
+        process_file(input_file, output_file)
+    except KeyboardInterrupt:
+        print("\n Operation cancelled by user.")
+        sys.exit(1)
+    except Exception:
+        sys.exit(1)
+    finally:
+        print(" Task completed.")
+
+if __name__ == "__main__":
+    main()
